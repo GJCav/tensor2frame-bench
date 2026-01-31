@@ -19,6 +19,7 @@ from pytorch3d.renderer import (
 )
 from tensor2frame_bench.timer import Timer
 
+RENDER_BATCH_SIZE = 32
 
 config = BenchConfig()
 suite = BenchSuite(
@@ -67,22 +68,24 @@ renderer = MeshRenderer(
 )
 
 def closure():
-    with torch.inference_mode():
-        frames = renderer(mesh)
-    
     writer = iio2.get_writer(
         'out.mp4',
         format='FFMPEG', # type: ignore
         mode='I', # multiple frames
         fps=config.fps,
     )
-    for frame in range(frames.shape[0]):
-        img = frames[frame, ..., :3].cpu().numpy()
-        img = (img * 255).astype(np.uint8)
-        writer.append_data(img)
+    with torch.inference_mode():
+        for st in range(0, verts.shape[0], RENDER_BATCH_SIZE):
+            ed = min(st + RENDER_BATCH_SIZE, verts.shape[0])
+            
+            frames = renderer(mesh[st:ed])
+            for frame in range(frames.shape[0]):
+                img = frames[frame, ..., :3].cpu().numpy()
+                img = (img * 255).astype(np.uint8)
+                writer.append_data(img)
     writer.close()
 
-timer = Timer(func=closure)
+timer = Timer(func=closure, repeat=4)
 timer.run()
 
 # print results
